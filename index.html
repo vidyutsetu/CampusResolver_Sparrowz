@@ -1,0 +1,1042 @@
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+
+// --- Constants & Configurations ---
+const CATEGORY_WEIGHTS = {
+  'Laboratory': 3,
+  'Wi-Fi': 2,
+  'Hostel': 2,
+  'Classroom': 1,
+  'Other': 1
+};
+
+const STATUSES = ['Raised', 'In Progress', 'Resolved'];
+const CATEGORIES = ['Wi-Fi', 'Hostel', 'Classroom', 'Laboratory', 'Other'];
+const DEPARTMENTS = ['CSE Department', 'AI Department', 'Civil Department', 'Mechanical Department', 'IoT Department', 'Electrical Department', 'Sports Complex'];
+const BOYS_HOSTELS = ['CV Raman', 'RNT', 'JLN', 'Boys Poly'];
+const GIRLS_HOSTELS = ['Gajra Raje', 'Kalpana Chawla', 'Indira Gandhi', 'Girls Poly'];
+const CLUBS = ['Coding Club', 'Flux', 'Google Developer Group', 'TnP', 'RDC', 'Ctrl Crew', 'Swar', 'E-cell', 'Wiki', 'Fiat', 'NCC', 'NSS', 'AWS', 'Udaan'];
+const CAMPUS_DOMAIN = '@sati.engg';
+
+const BACKGROUND_IMAGES = [
+  'https://drive.google.com/thumbnail?id=1AKhiXITC9kj4pkfKzhCZL-F0tLWo48gm&sz=w1920-h1080',
+  'https://drive.google.com/thumbnail?id=1JN5TbzVnF923G1i7lpCKT0ZuIJ1aHOmk&sz=w1920-h1080',
+  'https://drive.google.com/thumbnail?id=1KSo1nwlBlYH_hXvTnhnmv0stRQFRt6Zr&sz=w1920-h1080',
+  'https://drive.google.com/thumbnail?id=1MLjbLPxy7cFZEBgpjI1zO3yeMMMpb7cI&sz=w1920-h1080',
+  'https://drive.google.com/thumbnail?id=1UHYpwAcezTmsA0Kgz3bybQi235k-GLhN&sz=w1920-h1080',
+  'https://drive.google.com/thumbnail?id=1WxLnWBK6YdedXkIh6exuatr_cgR_EBLi&sz=w1920-h1080',
+  'https://drive.google.com/thumbnail?id=1X8ws9KAx3ey2NO2b4l4XlQK60RQDaJ18&sz=w1920-h1080',
+  'https://drive.google.com/thumbnail?id=1i2RKbLYnIXYapKnEftVbkWZefBcioyrL&sz=w1920-h1080',
+  'https://drive.google.com/thumbnail?id=1lBoVH3IrlN2Fn6cKSNhUWdC2qaM6dABv&sz=w1920-h1080'
+];
+
+// Helper to generate mock timestamps matching problem statement hours ago
+const getTimestampHoursAgo = (hours) => Date.now() - (hours * 60 * 60 * 1000);
+
+const INITIAL_MOCK_DATA = [
+  { id: 'C01', category: 'Wi-Fi', location: 'CV Raman', description: 'Wi-Fi router connectivity failure across corridor.', timestamp: getTimestampHoursAgo(48), status: 'Raised', upvotes: 12, isAnonymous: false, author: 'john.doe@sati.engg' },
+  { id: 'C02', category: 'Hostel', location: 'Gajra Raje', description: 'Water cooler filtration unit maintenance required.', timestamp: getTimestampHoursAgo(8), status: 'In Progress', upvotes: 4, isAnonymous: true, author: 'Anonymous' },
+  { id: 'C03', category: 'Classroom', location: 'CSE Department', description: 'Projector display power failure in lecture hall 3.', timestamp: getTimestampHoursAgo(72), status: 'Raised', upvotes: 25, isAnonymous: false, author: 'jane.smith@sati.engg' },
+  { id: 'C04', category: 'Laboratory', location: 'AI Department', description: 'Workstation OS licensing and network boot error.', timestamp: getTimestampHoursAgo(24), status: 'Resolved', upvotes: 2, isAnonymous: true, author: 'Anonymous' },
+];
+
+export default function App() {
+  // --- State Management ---
+  const [auth, setAuth] = useState(() => {
+    const saved = localStorage.getItem('campus_auth');
+    return saved ? JSON.parse(saved) : null; 
+  });
+  
+  // Login States
+  const [loginType, setLoginType] = useState('student');
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+
+  const [complaints, setComplaints] = useState(() => {
+    const saved = localStorage.getItem('campus_complaints_v5');
+    if (saved) {
+      try { return JSON.parse(saved); } catch (e) { return INITIAL_MOCK_DATA; }
+    }
+    return INITIAL_MOCK_DATA;
+  });
+
+  const [userVotes, setUserVotes] = useState(() => JSON.parse(localStorage.getItem('campus_user_votes') || '{}'));
+  const [studentTab, setStudentTab] = useState('dashboard');
+  const [teacherTab, setTeacherTab] = useState('dashboard');
+
+  // Opinions State
+  const [opinions, setOpinions] = useState(() => {
+    const saved = localStorage.getItem('campus_opinions_v1');
+    if (saved) {
+      try { return JSON.parse(saved); } catch (e) { return []; }
+    }
+    return [
+      { id: 'O01', text: 'We should extend library hours till midnight during exams.', author: 'john.doe@sati.engg', role: 'student', upvotes: 45, timestamp: Date.now() - 100000000 },
+      { id: 'O02', text: 'The new coding club schedule conflicts with evening classes.', author: 'Faculty Member', role: 'teacher', upvotes: 12, timestamp: Date.now() - 50000000 }
+    ];
+  });
+  const [opinionVotes, setOpinionVotes] = useState(() => JSON.parse(localStorage.getItem('campus_opinion_votes') || '{}'));
+  const [newOpinion, setNewOpinion] = useState('');
+
+  // Form State
+  const [formCategory, setFormCategory] = useState('');
+  const [formLocation, setFormLocation] = useState('');
+  const [formDescription, setFormDescription] = useState('');
+  const [isAnonymous, setIsAnonymous] = useState(false);
+  
+  // Table Filters & Sort
+  const [filterCategory, setFilterCategory] = useState('All');
+  const [filterStatus, setFilterStatus] = useState('All');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortConfig, setSortConfig] = useState({ key: 'timestamp', direction: 'desc' });
+
+  const [toast, setToast] = useState(null);
+  const [bgIndex, setBgIndex] = useState(0);
+
+  // --- Effects ---
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setBgIndex((prev) => (prev + 1) % BACKGROUND_IMAGES.length);
+    }, 5000); // Change image every 5 seconds
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => localStorage.setItem('campus_complaints_v5', JSON.stringify(complaints)), [complaints]);
+  useEffect(() => localStorage.setItem('campus_user_votes', JSON.stringify(userVotes)), [userVotes]);
+  useEffect(() => localStorage.setItem('campus_opinions_v1', JSON.stringify(opinions)), [opinions]);
+  useEffect(() => localStorage.setItem('campus_opinion_votes', JSON.stringify(opinionVotes)), [opinionVotes]);
+  
+  useEffect(() => {
+    if (auth) localStorage.setItem('campus_auth', JSON.stringify(auth));
+    else localStorage.removeItem('campus_auth');
+  }, [auth]);
+
+  // SMART AI Categorization (Mock)
+  useEffect(() => {
+    if (!formDescription) return;
+    const desc = formDescription.toLowerCase();
+    let detected = '';
+    if (desc.includes('wifi') || desc.includes('internet') || desc.includes('network') || desc.includes('router')) detected = 'Wi-Fi';
+    else if (desc.includes('water') || desc.includes('leak') || desc.includes('bed') || desc.includes('mess') || desc.includes('hostel')) detected = 'Hostel';
+    else if (desc.includes('projector') || desc.includes('board') || desc.includes('desk') || desc.includes('chair') || desc.includes('class')) detected = 'Classroom';
+    else if (desc.includes('computer') || desc.includes('lab') || desc.includes('equipment') || desc.includes('microscope')) detected = 'Laboratory';
+    
+    if (detected && formCategory !== detected) {
+      setFormCategory(detected);
+      setFormLocation(''); // Reset location when category automatically changes
+      showToast(`Smart Assist: Auto-selected category '${detected}'`, 'info');
+    }
+  }, [formDescription]);
+
+  // --- Handlers ---
+  const showToast = useCallback((message, type = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  }, []);
+
+  const handleLogin = (e) => {
+    e.preventDefault();
+    setLoginError('');
+
+    if (!loginEmail.endsWith(CAMPUS_DOMAIN)) {
+      setLoginError(`Authentication failed. You must use a valid ${CAMPUS_DOMAIN} email address.`);
+      return;
+    }
+    if (loginPassword.length < 6) {
+      setLoginError('Password must be at least 6 characters.');
+      return;
+    }
+
+    const role = loginType;
+    const name = loginEmail.split('@')[0].replace('.', ' ').replace(/\b\w/g, l => l.toUpperCase());
+
+    setAuth({ email: loginEmail, role, name });
+    showToast(`Welcome to CampusResolve, ${name}!`);
+  };
+
+  const handleLogout = () => {
+    setAuth(null);
+    setLoginEmail('');
+    setLoginPassword('');
+  };
+
+  const handleVote = (id, direction) => {
+    const currentVote = userVotes[id] || 0;
+    if (currentVote === direction) {
+      showToast('Vote already recorded.', 'info');
+      return;
+    }
+
+    const scoreChange = direction - currentVote;
+    
+    setComplaints(prev => prev.map(c => 
+      c.id === id ? { ...c, upvotes: (c.upvotes || 0) + scoreChange } : c
+    ));
+    setUserVotes(prev => ({ ...prev, [id]: direction }));
+    showToast(direction === 1 ? 'Upvoted! Priority increased.' : 'Downvoted! Priority decreased.');
+  };
+
+  const handleOpinionVote = (id, direction) => {
+    const currentVote = opinionVotes[id] || 0;
+    if (currentVote === direction) {
+      showToast('Vote already recorded.', 'info');
+      return;
+    }
+
+    const scoreChange = direction - currentVote;
+    
+    setOpinions(prev => prev.map(o => 
+      o.id === id ? { ...o, upvotes: (o.upvotes || 0) + scoreChange } : o
+    ));
+    setOpinionVotes(prev => ({ ...prev, [id]: direction }));
+    showToast(direction === 1 ? 'Opinion upvoted!' : 'Opinion downvoted!');
+  };
+
+  const handleAddOpinion = (e) => {
+    e.preventDefault();
+    if (!newOpinion.trim()) return;
+    
+    const newOp = {
+      id: `O${Date.now()}`,
+      text: newOpinion.trim(),
+      author: isAnonymous ? 'Anonymous' : auth.name,
+      role: auth.role,
+      upvotes: 0,
+      timestamp: Date.now()
+    };
+    
+    setOpinions(prev => [newOp, ...prev]);
+    setNewOpinion('');
+    setIsAnonymous(false);
+    showToast('Opinion shared successfully!');
+  };
+
+  const handleAddComplaint = (e) => {
+    e.preventDefault();
+    if (!formCategory || !formLocation || !formDescription.trim()) return;
+
+    const currentIds = complaints.map(c => parseInt(c.id.replace('C', '')) || 0);
+    const maxId = currentIds.length > 0 ? Math.max(...currentIds) : 0;
+    const newId = `C${String(maxId + 1).padStart(2, '0')}`;
+
+    const newComplaint = {
+      id: newId,
+      category: formCategory,
+      location: formLocation,
+      description: formDescription.trim(),
+      timestamp: Date.now(),
+      status: 'Raised',
+      upvotes: 0,
+      isAnonymous: isAnonymous,
+      author: isAnonymous ? 'Anonymous' : auth.email
+    };
+
+    setComplaints(prev => [newComplaint, ...prev]);
+    setFormCategory('');
+    setFormLocation('');
+    setFormDescription('');
+    setIsAnonymous(false);
+    showToast(`Complaint ${newId} submitted successfully!`);
+  };
+
+  const updateStatus = (id, newStatus) => {
+    setComplaints(prev => prev.map(c => 
+      c.id === id ? { ...c, status: newStatus } : c
+    ));
+    showToast(`Status updated to ${newStatus}`);
+  };
+
+  const getHoursPending = (timestamp) => Math.max(0, (Date.now() - timestamp) / (1000 * 60 * 60));
+
+  // --- Derived Data ---
+  const civicStats = useMemo(() => {
+    if (!auth || auth.role !== 'student') return null;
+    const myComplaintsCount = complaints.filter(c => c.author === auth.email).length;
+    const myVotesCount = Object.keys(userVotes).length;
+    const score = (myComplaintsCount * 15) + (myVotesCount * 5);
+    let rank = 'Observer';
+    if (score >= 100) rank = 'Campus Sentinel 🛡️';
+    else if (score >= 50) rank = 'Active Citizen 🌟';
+    else if (score > 0) rank = 'Contributor 🤝';
+    return { score, rank, myComplaintsCount };
+  }, [complaints, userVotes, auth]);
+
+  const aiInsights = useMemo(() => {
+    const unresolved = complaints.filter(c => c.status !== 'Resolved');
+    const health = Math.max(10, 100 - (unresolved.length * 4));
+    let topCat = 'None', topLoc = 'None';
+    
+    if (unresolved.length > 0) {
+      const catCounts = unresolved.reduce((acc, c) => ({...acc, [c.category]: (acc[c.category] || 0) + 1}), {});
+      topCat = Object.keys(catCounts).reduce((a, b) => catCounts[a] > catCounts[b] ? a : b);
+      
+      const locCounts = unresolved.filter(c => c.category === topCat).reduce((acc, c) => ({...acc, [c.location]: (acc[c.location] || 0) + 1}), {});
+      topLoc = Object.keys(locCounts).reduce((a, b) => locCounts[a] > locCounts[b] ? a : b);
+    }
+    
+    return { health, topCat, topLoc, issueCount: unresolved.length };
+  }, [complaints]);
+
+  const stats = useMemo(() => {
+    const total = complaints.length;
+    const resolved = complaints.filter(c => c.status === 'Resolved').length;
+    return { total, pending: total - resolved, resolved };
+  }, [complaints]);
+
+  const priorityQueue = useMemo(() => {
+    const unresolved = complaints.filter(c => c.status !== 'Resolved');
+    const scored = unresolved.map(c => {
+      const weight = CATEGORY_WEIGHTS[c.category] || 1;
+      const hoursPending = getHoursPending(c.timestamp);
+      const ageDays = Math.floor(hoursPending / 24);
+      const score = weight + ageDays + (c.upvotes || 0);
+      return { ...c, score, hoursPending, weight, ageDays };
+    });
+
+    scored.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      if (b.hoursPending !== a.hoursPending) return b.hoursPending - a.hoursPending;
+      return a.category.localeCompare(b.category);
+    });
+
+    return scored.slice(0, 3);
+  }, [complaints]);
+
+  const filteredComplaints = useMemo(() => {
+    let filtered = complaints.filter(c => {
+      const matchCategory = filterCategory === 'All' || c.category === filterCategory;
+      const matchStatus = filterStatus === 'All' || c.status === filterStatus;
+      const matchSearch = c.description.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                          c.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          c.location.toLowerCase().includes(searchQuery.toLowerCase());
+      return matchCategory && matchStatus && matchSearch;
+    });
+
+    filtered.sort((a, b) => {
+      let aVal = sortConfig.key === 'hoursPending' ? getHoursPending(a.timestamp) : a[sortConfig.key];
+      let bVal = sortConfig.key === 'hoursPending' ? getHoursPending(b.timestamp) : b[sortConfig.key];
+      if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+      if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    return filtered;
+  }, [complaints, filterCategory, filterStatus, searchQuery, sortConfig]);
+
+  // --- Render Sections ---
+  const renderOpinions = () => (
+    <div className="space-y-6 max-w-4xl mx-auto w-full animate-fade-in-up">
+      <div className="bg-[#FCFBF8] p-6 rounded-3xl shadow-sm border border-[#E5DFD3]">
+        <h3 className="text-xl font-formal-title font-bold text-[#342921] tracking-tight mb-4">Share Your Opinion</h3>
+        <form onSubmit={handleAddOpinion} className="space-y-4">
+          <textarea
+            value={newOpinion}
+            onChange={(e) => setNewOpinion(e.target.value)}
+            required rows={3}
+            placeholder="What's on your mind? Share an idea, suggestion, or thought with the campus..."
+            className="w-full rounded-xl border border-[#DFD8CE] px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#8C6D51] bg-[#F9F7F3] hover:bg-white transition-colors resize-none font-medium text-[#4A3D34] placeholder-[#B5A89E]"
+          />
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <button type="button" onClick={() => setIsAnonymous(!isAnonymous)} className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-[#8C6D51] focus:ring-offset-2 focus:ring-offset-[#FCFBF8] ${isAnonymous ? 'bg-[#8C6D51]' : 'bg-[#D1C8C0]'}`}>
+                <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${isAnonymous ? 'translate-x-5' : 'translate-x-0'}`} />
+              </button>
+              <p className="text-sm font-bold text-[#4A3D34]">Post Anonymously</p>
+            </div>
+            <button type="submit" disabled={!newOpinion.trim()} className="bg-[#7A5A40] hover:bg-[#624731] text-[#FCFBF8] font-formal-title text-sm font-bold py-2.5 px-6 rounded-xl transition-all duration-200 disabled:opacity-50 shadow-sm shadow-[#7A5A40]/30">
+              Publish Opinion
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <div className="space-y-4">
+        {[...opinions].sort((a, b) => b.upvotes - a.upvotes).map(o => {
+          const currentVote = opinionVotes[o.id] || 0;
+          return (
+            <div key={o.id} className="bg-[#FCFBF8] p-5 rounded-2xl border border-[#E5DFD3] shadow-sm flex gap-5 items-start">
+              <div className="flex flex-col items-center justify-center gap-1 w-12 bg-[#F9F7F3] p-1.5 rounded-xl border border-[#EAE5DB]">
+                <button onClick={() => handleOpinionVote(o.id, 1)} className={`w-8 h-6 rounded-lg flex items-center justify-center transition-all ${currentVote === 1 ? 'bg-green-100 text-green-700 shadow-inner' : 'text-[#A7988A] hover:bg-[#E5DFD3] hover:text-[#8C6D51]'}`}>
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 15l7-7 7 7"></path></svg>
+                </button>
+                <span className="font-formal-title font-bold text-base leading-none text-[#342921] py-1">{o.upvotes}</span>
+                <button onClick={() => handleOpinionVote(o.id, -1)} className={`w-8 h-6 rounded-lg flex items-center justify-center transition-all ${currentVote === -1 ? 'bg-red-100 text-red-700 shadow-inner' : 'text-[#A7988A] hover:bg-[#E5DFD3] hover:text-[#8C6D51]'}`}>
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7"></path></svg>
+                </button>
+              </div>
+              <div className="flex-1 w-full">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-xs font-bold text-[#8B7C6E]">{o.author}</span>
+                  <span className={`text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded-md ${o.role === 'teacher' ? 'bg-[#E5DFD3] text-[#5A4535]' : 'bg-[#F0EBE1] text-[#8C6D51]'}`}>{o.role}</span>
+                  <span className="text-xs text-[#B5A89E] ml-auto">{new Date(o.timestamp).toLocaleDateString()}</span>
+                </div>
+                <p className="text-[#342921] font-medium text-base mt-1 whitespace-pre-wrap">{o.text}</p>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+
+  if (!auth) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden font-formal-body">
+        
+        {/* BACKGROUND SLIDESHOW */}
+        {BACKGROUND_IMAGES.map((img, index) => (
+          <div
+            key={img}
+            className={`fixed inset-0 bg-cover bg-center transition-opacity duration-1000 z-[-2] ${
+              index === bgIndex ? 'opacity-100' : 'opacity-0'
+            }`}
+            style={{ backgroundImage: `url('${img}')` }}
+          />
+        ))}
+        {/* LIGHTER OVERLAY FOR LOGIN SO PICS ARE CLEARLY VISIBLE */}
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-[2px] z-[-1]"></div>
+        
+        <div className="max-w-md w-full relative z-10">
+          <div className="bg-[#342921]/90 backdrop-blur-2xl rounded-3xl shadow-2xl border border-[#524438] overflow-hidden">
+            <div className="p-8 pb-6 text-center border-b border-[#524438]">
+              <div className="bg-[#8C6D51] w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-[#8C6D51]/30">
+                <svg className="w-8 h-8 text-[#FAF6F0]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path></svg>
+              </div>
+              <h1 className="text-4xl font-formal-title font-bold text-[#EFEBE3] tracking-tight">CampusResolve</h1>
+              <p className="text-[#8C6D51] font-bold text-xs mt-2 uppercase tracking-widest">Empowering Voices. Elevating Campus.</p>
+              <p className="text-[#BCAEA2] mt-3 font-medium text-sm">Secure Portal Authentication</p>
+            </div>
+            
+            <form onSubmit={handleLogin} className="p-8 pt-6 space-y-5">
+              
+              {/* Role Toggle */}
+              <div className="flex bg-[#1E1712] rounded-xl p-1 mb-2 border border-[#43362C]">
+                <button 
+                  type="button"
+                  onClick={() => setLoginType('student')}
+                  className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all duration-300 ${loginType === 'student' ? 'bg-[#7B5D45] text-[#FCFBF8] shadow-md' : 'text-[#8D7F75] hover:text-[#D1C6BC]'}`}
+                >
+                  Student
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => setLoginType('teacher')}
+                  className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all duration-300 ${loginType === 'teacher' ? 'bg-[#7B5D45] text-[#FCFBF8] shadow-md' : 'text-[#8D7F75] hover:text-[#D1C6BC]'}`}
+                >
+                  Teacher / Admin
+                </button>
+              </div>
+
+              {loginError && (
+                <div className="p-3 rounded-xl bg-red-900/40 border border-red-500/50 text-red-200 text-sm font-medium flex items-center gap-2">
+                  <svg className="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd"></path></svg>
+                  {loginError}
+                </div>
+              )}
+              <div>
+                <label className="block text-xs font-bold text-[#BCAEA2] uppercase tracking-wider mb-1.5">Institutional Email</label>
+                <div className="relative group">
+                  <svg className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-[#7B685B] group-focus-within:text-[#BCAEA2] transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 12a4 4 0 10-8 0 4 4 0 008 0zm0 0v1.5a2.5 2.5 0 005 0V12a9 9 0 10-9 9m4.5-1.206a8.959 8.959 0 01-4.5 1.207" /></svg>
+                  <input
+                    type="email"
+                    required
+                    value={loginEmail}
+                    onChange={(e) => setLoginEmail(e.target.value)}
+                    placeholder={loginType === 'teacher' ? `faculty${CAMPUS_DOMAIN}` : `student${CAMPUS_DOMAIN}`}
+                    className="w-full bg-[#1E1712]/50 border border-[#524438] rounded-xl px-10 py-3 text-[#EFEBE3] placeholder-[#7B685B] focus:outline-none focus:ring-2 focus:ring-[#8C6D51] focus:border-transparent transition-all"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-[#BCAEA2] uppercase tracking-wider mb-1.5">Passcode</label>
+                <div className="relative group">
+                  <svg className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-[#7B685B] group-focus-within:text-[#BCAEA2] transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                  <input
+                    type="password"
+                    required
+                    value={loginPassword}
+                    onChange={(e) => setLoginPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full bg-[#1E1712]/50 border border-[#524438] rounded-xl px-10 py-3 text-[#EFEBE3] placeholder-[#7B685B] focus:outline-none focus:ring-2 focus:ring-[#8C6D51] focus:border-transparent transition-all"
+                  />
+                </div>
+              </div>
+              
+              <button type="submit" className="w-full bg-[#8C6D51] hover:bg-[#72573F] text-[#FAF6F0] font-formal-title font-bold text-lg py-3.5 px-4 rounded-xl transition-all duration-200 shadow-lg shadow-[#8C6D51]/20 mt-4">
+                Enter Portal
+              </button>
+            </form>
+          </div>
+        </div>
+
+        {/* Global Styles */}
+        <style dangerouslySetInnerHTML={{__html: `
+          @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;700;800&family=Lora:wght@400;500;600&display=swap');
+          .font-formal-title { font-family: 'Playfair Display', serif; }
+          .font-formal-body { font-family: 'Lora', serif; }
+        `}} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen text-[#342921] font-formal-body selection:bg-[#E3D1C1] relative pb-12">
+      
+      {/* BACKGROUND SLIDESHOW */}
+      {BACKGROUND_IMAGES.map((img, index) => (
+        <div
+          key={img}
+          className={`fixed inset-0 bg-cover bg-center transition-opacity duration-1000 z-[-2] ${
+            index === bgIndex ? 'opacity-100' : 'opacity-0'
+          }`}
+          style={{ backgroundImage: `url('${img}')` }}
+        />
+      ))}
+      {/* LIGHT OVERLAY FOR DASHBOARD SO PICS ARE CLEARLY VISIBLE */}
+      <div className="fixed inset-0 bg-[#F5F2EB]/40 backdrop-blur-[2px] z-[-1]"></div>
+
+      {/* Toast Notification */}
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-50 animate-fade-in-up">
+          <div className={`flex items-center gap-3 px-4 py-3 rounded-xl shadow-xl border ${
+            toast.type === 'error' ? 'bg-red-50 border-red-200 text-red-800' : 
+            toast.type === 'info' ? 'bg-blue-50 border-blue-200 text-blue-800' : 'bg-[#FCFBF8] border-[#E5DFD3] text-[#4A3D34]'
+          }`}>
+            {toast.type === 'error' ? (
+               <svg className="w-5 h-5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+            ) : toast.type === 'info' ? (
+               <svg className="w-5 h-5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+            ) : (
+               <svg className="w-5 h-5 text-[#8C6D51]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+            )}
+            <span className="font-medium text-sm">{toast.message}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Header */}
+      <header className="bg-[#FCFBF8] border-b border-[#E5DFD3] sticky top-0 z-40 shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex justify-between items-center">
+          <div className="flex items-center gap-3">
+            <div className="bg-[#8C6D51] p-2 rounded-lg">
+              <svg className="w-6 h-6 text-[#FCFBF8]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg>
+            </div>
+            <div>
+              <h1 className="text-2xl font-formal-title font-bold text-[#342921] tracking-tight leading-tight">CampusResolve</h1>
+              <p className="text-[#8C6D51] text-[10px] font-bold uppercase tracking-widest">{auth.role === 'teacher' ? 'Faculty & Admin Portal' : 'Student Portal'} <span className="text-[#A7988A] px-1">•</span> Your Voice, Our Action</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-4">
+            {auth.role === 'student' && civicStats && (
+              <div className="hidden lg:flex items-center gap-2 bg-[#F9F7F3] px-3 py-1.5 rounded-full border border-[#DFD8CE]">
+                <span className="text-xs font-bold text-[#8C6D51] uppercase tracking-wider">Civic Score:</span>
+                <span className="text-sm font-formal-title font-bold text-[#342921]">{civicStats.score}</span>
+                <span className="text-xs text-[#8B7C6E] ml-1">({civicStats.rank})</span>
+              </div>
+            )}
+            <div className="hidden md:flex items-center gap-2 text-sm text-[#6C5B4F] font-medium">
+              <div className="w-8 h-8 rounded-full bg-[#E5DFD3] text-[#5A4535] flex items-center justify-center font-bold text-xs">
+                {auth.name.charAt(0)}
+              </div>
+              {auth.name}
+            </div>
+            <button onClick={handleLogout} className="text-sm font-bold text-[#6C5B4F] hover:text-red-700 bg-[#FCFBF8] hover:bg-red-50 px-4 py-2 rounded-xl transition-colors border border-[#E5DFD3] hover:border-red-200">
+              Logout
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        
+        {/* ==================== TEACHER DASHBOARD ==================== */}
+        {auth.role === 'teacher' && (
+          <div className="animate-fade-in-up">
+            <div className="flex bg-[#EAE5DB]/60 p-1.5 rounded-xl w-fit mb-8 border border-[#DFD8CE] shadow-inner backdrop-blur-sm">
+              <button 
+                onClick={() => setTeacherTab('dashboard')} 
+                className={`px-8 py-2.5 text-sm font-bold rounded-lg transition-all duration-300 flex items-center gap-2 ${teacherTab === 'dashboard' ? 'bg-[#FCFBF8] text-[#8C6D51] shadow-sm ring-1 ring-black/5' : 'text-[#8B7C6E] hover:text-[#5A4535]'}`}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg>
+                Admin Dashboard
+              </button>
+              <button 
+                onClick={() => setTeacherTab('opinions')} 
+                className={`px-8 py-2.5 text-sm font-bold rounded-lg transition-all duration-300 flex items-center gap-2 ${teacherTab === 'opinions' ? 'bg-[#FCFBF8] text-[#8C6D51] shadow-sm ring-1 ring-black/5' : 'text-[#8B7C6E] hover:text-[#5A4535]'}`}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg>
+                Campus Opinions
+              </button>
+            </div>
+            
+            {teacherTab === 'opinions' ? (
+              renderOpinions()
+            ) : (
+            <div className="space-y-8">
+            
+            {/* MVP: AI CAMPUS SENTINEL */}
+            <div className="bg-gradient-to-br from-[#342921] to-[#5A4535] p-8 rounded-3xl shadow-xl border border-[#7A5A40] text-white relative overflow-hidden">
+              <div className="absolute right-0 top-0 opacity-5 w-64 h-64 -mr-10 -mt-10 pointer-events-none">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
+              </div>
+              <div className="relative z-10 flex flex-col md:flex-row gap-8 items-center">
+                <div className="flex-1">
+                  <div className="flex items-center gap-3 mb-2">
+                    <span className="bg-white/20 text-white text-[10px] font-bold uppercase tracking-widest px-3 py-1 rounded-full backdrop-blur-md">MVP Feature</span>
+                    <h3 className="text-2xl font-formal-title font-bold text-[#FCFBF8] tracking-tight">AI Campus Sentinel</h3>
+                  </div>
+                  <p className="text-[#D1C8C0] text-sm font-medium">Real-time predictive analytics based on complaint velocity and resolution rates.</p>
+                  
+                  <div className="mt-6 bg-white/10 p-5 rounded-2xl border border-white/20 backdrop-blur-sm">
+                    <p className="font-bold text-[#FCFBF8] text-lg mb-1">
+                      {aiInsights.issueCount > 0 ? `Attention Required: ${aiInsights.topCat} Disruptions` : `All systems operational.`}
+                    </p>
+                    <p className="text-sm text-[#E5DFD3]">
+                      {aiInsights.issueCount > 0 
+                        ? `The AI detects a high concentration of ${aiInsights.topCat.toLowerCase()} issues, primarily clustered around ${aiInsights.topLoc}. We recommend dispatching maintenance teams to this sector immediately to prevent campus-wide friction.` 
+                        : `No critical anomalies detected. The campus environment is currently stable.`}
+                    </p>
+                  </div>
+                </div>
+                
+                <div className="w-full md:w-auto flex flex-col items-center justify-center bg-black/20 p-6 rounded-2xl border border-white/10 backdrop-blur-md">
+                  <div className="relative w-32 h-32 flex items-center justify-center">
+                    <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
+                      <path className="text-black/30" strokeWidth="3" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                      <path className={`${aiInsights.health > 70 ? 'text-green-400' : aiInsights.health > 40 ? 'text-yellow-400' : 'text-red-400'} transition-all duration-1000`} strokeDasharray={`${aiInsights.health}, 100`} strokeWidth="3" strokeLinecap="round" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                    </svg>
+                    <div className="absolute flex flex-col items-center justify-center">
+                      <span className="text-3xl font-formal-title font-bold text-white">{aiInsights.health}%</span>
+                      <span className="text-[9px] uppercase tracking-widest text-[#D1C8C0] font-bold">Health Index</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              
+              {/* Stats */}
+              <div className="lg:col-span-1 space-y-4">
+                <h2 className="text-sm font-formal-body uppercase tracking-widest font-bold text-[#8C6D51] flex items-center gap-2">Overview</h2>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-[#FCFBF8] p-5 rounded-2xl shadow-sm border border-[#E5DFD3] flex flex-col justify-center items-center">
+                    <span className="text-4xl font-formal-title font-bold text-[#342921]">{stats.total}</span>
+                    <span className="text-xs text-[#8B7C6E] uppercase tracking-wider mt-1 font-bold">Total</span>
+                  </div>
+                  <div className="bg-[#FCFBF8] p-5 rounded-2xl shadow-sm border border-[#E5DFD3] flex flex-col justify-center items-center">
+                    <span className="text-4xl font-formal-title font-bold text-[#C56F3D]">{stats.pending}</span>
+                    <span className="text-xs text-[#8B7C6E] uppercase tracking-wider mt-1 font-bold">Pending</span>
+                  </div>
+                  <div className="bg-[#EBECE4] p-5 rounded-2xl shadow-sm border border-[#C6CFC1] flex flex-col justify-center items-center col-span-2">
+                    <span className="text-4xl font-formal-title font-bold text-[#4B6B4A]">{stats.resolved}</span>
+                    <span className="text-xs text-[#4B6B4A] uppercase tracking-wider mt-1 font-bold">Resolved Issues</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Priority Queue */}
+              <div className="lg:col-span-2 flex flex-col h-full">
+                <div className="flex justify-between items-end mb-4">
+                  <h2 className="text-sm font-formal-body uppercase tracking-widest font-bold text-red-600">Action Required: Priority Queue</h2>
+                </div>
+                <div className="bg-[#FCFBF8] rounded-2xl shadow-sm border border-[#E5DFD3] flex-1 overflow-hidden flex flex-col">
+                  {priorityQueue.length === 0 ? (
+                    <div className="flex-1 flex items-center justify-center p-8 text-[#8B7C6E]">All caught up!</div>
+                  ) : (
+                    <div className="divide-y divide-[#E5DFD3] flex-1">
+                      {priorityQueue.map((c, idx) => (
+                          <div key={c.id} className="p-5 flex items-start gap-4">
+                            <div className={`flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm shadow-sm font-formal-title ${idx === 0 ? 'bg-[#9B4F3A] text-[#FCFBF8]' : 'bg-[#EFECE6] text-[#6C5B4F] border border-[#DFD8CE]'}`}>
+                              #{idx + 1}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex justify-between">
+                                <p className="text-sm font-bold text-[#342921]">{c.id} • {c.category} • {c.location}</p>
+                                <span className="text-xs font-bold bg-red-50 text-red-700 px-2 py-0.5 rounded-md border border-red-200">Score: {c.score}</span>
+                              </div>
+                              <p className="text-sm text-[#5A4535] truncate mt-1">{c.description}</p>
+                            </div>
+                          </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Admin Master Table */}
+            <div className="bg-[#FCFBF8] rounded-2xl shadow-sm border border-[#E5DFD3] overflow-hidden">
+               <div className="p-5 border-b border-[#E5DFD3] bg-[#FCFBF8] flex flex-col md:flex-row gap-4 items-center justify-between">
+                  <h3 className="text-xl font-formal-title font-bold text-[#342921]">Master Registry</h3>
+                  <div className="flex gap-3">
+                    <input type="text" placeholder="Search..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="px-4 py-2 text-sm border border-[#DFD8CE] bg-[#F9F7F3] rounded-xl focus:ring-2 focus:ring-[#8C6D51] outline-none"/>
+                    <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)} className="px-4 py-2 text-sm border border-[#DFD8CE] bg-[#F9F7F3] rounded-xl outline-none text-[#5A4535]">
+                      <option value="All">All Categories</option>
+                      {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                    </select>
+                  </div>
+               </div>
+               <div className="overflow-x-auto">
+                 <table className="w-full text-left text-sm whitespace-nowrap">
+                    <thead className="bg-[#F5F2EB] border-b border-[#E5DFD3] text-[#8B7C6E] uppercase tracking-wider text-[10px] font-bold">
+                      <tr>
+                        <th className="px-6 py-4">ID</th>
+                        <th className="px-6 py-4">Location & Category</th>
+                        <th className="px-6 py-4 w-full">Detailed Description</th>
+                        <th className="px-6 py-4">Prioritization</th>
+                        <th className="px-6 py-4">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#E5DFD3]">
+                      {filteredComplaints.map(c => (
+                        <tr key={c.id} className="hover:bg-[#F9F7F3] transition-colors">
+                          <td className="px-6 py-4 font-bold text-[#342921]">{c.id}</td>
+                          <td className="px-6 py-4">
+                            <span className="block font-medium text-[#4A3D34]">{c.location}</span>
+                            <span className="text-xs text-[#8B7C6E]">{c.category}</span>
+                          </td>
+                          <td className="px-6 py-4 text-[#5A4535] whitespace-normal min-w-[200px]">{c.description}</td>
+                          <td className="px-6 py-4 font-bold text-[#8C6D51]">{c.upvotes || 0} Votes</td>
+                          <td className="px-6 py-4">
+                             <select value={c.status} onChange={(e) => updateStatus(c.id, e.target.value)} className={`text-xs font-bold rounded-lg px-2 py-1 border outline-none transition-colors ${c.status === 'Resolved' ? 'bg-green-50 text-green-700 border-green-200' : c.status === 'In Progress' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
+                                {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                             </select>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                 </table>
+               </div>
+            </div>
+            </div>
+            )}
+          </div>
+        )}
+
+        {/* ==================== STUDENT DASHBOARD ==================== */}
+        {auth.role === 'student' && (
+          <div className="animate-fade-in-up">
+            
+            {/* Student Navigation Tabs */}
+            <div className="flex flex-wrap bg-[#EAE5DB]/60 p-1.5 rounded-xl w-fit mb-8 border border-[#DFD8CE] shadow-inner backdrop-blur-sm gap-1">
+              <button 
+                onClick={() => setStudentTab('dashboard')} 
+                className={`px-6 py-2.5 text-sm font-bold rounded-lg transition-all duration-300 flex items-center gap-2 ${studentTab === 'dashboard' ? 'bg-[#FCFBF8] text-[#8C6D51] shadow-sm ring-1 ring-black/5' : 'text-[#8B7C6E] hover:text-[#5A4535]'}`}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg>
+                My Dashboard
+              </button>
+              <button 
+                onClick={() => setStudentTab('bulletin')} 
+                className={`px-6 py-2.5 text-sm font-bold rounded-lg transition-all duration-300 flex items-center gap-2 ${studentTab === 'bulletin' ? 'bg-[#FCFBF8] text-[#8C6D51] shadow-sm ring-1 ring-black/5' : 'text-[#8B7C6E] hover:text-[#5A4535]'}`}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 8h2a2 2 0 012 2v6a2 2 0 01-2 2h-2v4l-4-4H9a1.994 1.994 0 01-1.414-.586m0 0L11 14h4a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2v4l.586-.586z"></path></svg>
+                Community Bulletin
+              </button>
+              <button 
+                onClick={() => setStudentTab('opinions')} 
+                className={`px-6 py-2.5 text-sm font-bold rounded-lg transition-all duration-300 flex items-center gap-2 ${studentTab === 'opinions' ? 'bg-[#FCFBF8] text-[#8C6D51] shadow-sm ring-1 ring-black/5' : 'text-[#8B7C6E] hover:text-[#5A4535]'}`}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg>
+                Opinions
+              </button>
+            </div>
+
+            {studentTab === 'opinions' ? (
+              renderOpinions()
+            ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            
+            {/* Submit Column (MASSIVELY UPGRADED) */}
+            <div className="lg:col-span-5 space-y-6">
+              <div className="bg-[#FCFBF8] p-8 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.08)] border-2 border-[#8C6D51]/30 sticky top-24 relative overflow-hidden">
+                {/* Decorative Glow */}
+                <div className="absolute -top-20 -right-20 w-48 h-48 bg-[#8C6D51] rounded-full blur-[60px] opacity-20 pointer-events-none"></div>
+
+                <div className="flex flex-col mb-8 border-b border-[#E5DFD3] pb-6">
+                  <span className="bg-gradient-to-r from-[#8C6D51] to-[#5A4535] text-white text-[10px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-lg w-fit mb-3 shadow-md">⚡ Express AI Submission</span>
+                  <h3 className="text-3xl sm:text-4xl font-formal-title font-bold text-[#342921] tracking-tight leading-tight">Lodge a Report</h3>
+                  <p className="text-sm sm:text-base text-[#8B7C6E] mt-2 font-medium">Have an issue? Describe it below and let our systems alert the right people instantly.</p>
+                </div>
+                
+                <form onSubmit={handleAddComplaint} className="space-y-6 relative z-10">
+                  <div>
+                    <label className="block text-xs font-bold text-[#8B7C6E] uppercase tracking-wider mb-2 flex justify-between">
+                      Detailed Description <span className="text-[#A5886F] font-normal normal-case italic flex items-center gap-1"><svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M10 12a2 2 0 100-4 2 2 0 000 4z"/><path fillRule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd"/></svg> AI analyzes this</span>
+                    </label>
+                    <textarea
+                      value={formDescription}
+                      onChange={(e) => setFormDescription(e.target.value)}
+                      required rows={4}
+                      placeholder="E.g. No internet connection in the library since 10 AM..."
+                      className="w-full rounded-2xl border-2 border-[#DFD8CE] px-5 py-4 text-base sm:text-lg focus:outline-none focus:ring-4 focus:ring-[#8C6D51]/20 focus:border-[#8C6D51] bg-[#F9F7F3] hover:bg-white transition-all resize-none font-medium text-[#4A3D34] placeholder-[#B5A89E] shadow-inner"
+                    />
+                  </div>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                    <div>
+                      <label className="block text-xs font-bold text-[#8B7C6E] uppercase tracking-wider mb-2">Category</label>
+                      <select 
+                        value={formCategory} 
+                        onChange={(e) => {
+                          setFormCategory(e.target.value);
+                          setFormLocation(''); // Clear location on category change
+                        }} 
+                        required 
+                        className="w-full rounded-2xl border-2 border-[#DFD8CE] px-4 py-3.5 text-base focus:outline-none focus:ring-4 focus:ring-[#8C6D51]/20 focus:border-[#8C6D51] bg-[#F9F7F3] font-bold text-[#5A4535] shadow-sm transition-all cursor-pointer"
+                      >
+                        <option value="" disabled>Select Category...</option>
+                        {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-[#8B7C6E] uppercase tracking-wider mb-2">Exact Location</label>
+                      <select 
+                        value={formLocation} 
+                        onChange={(e) => setFormLocation(e.target.value)} 
+                        required 
+                        disabled={!formCategory}
+                        className="w-full rounded-2xl border-2 border-[#DFD8CE] px-4 py-3.5 text-base focus:outline-none focus:ring-4 focus:ring-[#8C6D51]/20 focus:border-[#8C6D51] bg-[#F9F7F3] font-bold text-[#5A4535] shadow-sm transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <option value="" disabled>{formCategory ? 'Select Place...' : 'Select Category First'}</option>
+                        
+                        {(!formCategory || formCategory === 'Wi-Fi') && (
+                           <>
+                             <optgroup label="Departments & Campus">{DEPARTMENTS.map(loc => <option key={loc} value={loc}>{loc}</option>)}</optgroup>
+                             <optgroup label="Boys Hostels">{BOYS_HOSTELS.map(loc => <option key={loc} value={loc}>{loc}</option>)}</optgroup>
+                             <optgroup label="Girls Hostels">{GIRLS_HOSTELS.map(loc => <option key={loc} value={loc}>{loc}</option>)}</optgroup>
+                             <optgroup label="Clubs & Organizations">{CLUBS.map(loc => <option key={loc} value={loc}>{loc}</option>)}</optgroup>
+                           </>
+                        )}
+                        
+                        {formCategory === 'Hostel' && (
+                           <>
+                             <optgroup label="Boys Hostels">{BOYS_HOSTELS.map(loc => <option key={loc} value={loc}>{loc}</option>)}</optgroup>
+                             <optgroup label="Girls Hostels">{GIRLS_HOSTELS.map(loc => <option key={loc} value={loc}>{loc}</option>)}</optgroup>
+                           </>
+                        )}
+                        
+                        {(formCategory === 'Classroom' || formCategory === 'Laboratory') && (
+                           <optgroup label="Departments & Campus">{DEPARTMENTS.map(loc => <option key={loc} value={loc}>{loc}</option>)}</optgroup>
+                        )}
+                        
+                        {formCategory === 'Other' && (
+                           <>
+                             <optgroup label="Clubs & Organizations">{CLUBS.map(loc => <option key={loc} value={loc}>{loc}</option>)}</optgroup>
+                             <optgroup label="Campus Areas">{DEPARTMENTS.map(loc => <option key={loc} value={loc}>{loc}</option>)}</optgroup>
+                           </>
+                        )}
+
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-4 bg-[#F5F2EB] p-4 rounded-2xl border border-[#DFD8CE] mt-4 shadow-inner">
+                    <button type="button" onClick={() => setIsAnonymous(!isAnonymous)} className={`relative inline-flex h-7 w-14 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-300 ease-in-out focus:outline-none focus:ring-2 focus:ring-[#8C6D51] focus:ring-offset-2 focus:ring-offset-[#FCFBF8] ${isAnonymous ? 'bg-[#8C6D51]' : 'bg-[#D1C8C0]'}`}>
+                      <span className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-md ring-0 transition duration-300 ease-in-out ${isAnonymous ? 'translate-x-7' : 'translate-x-0'}`} />
+                    </button>
+                    <div>
+                      <p className="text-base font-bold text-[#342921]">Submit Anonymously</p>
+                      <p className="text-xs text-[#8B7C6E] font-medium mt-0.5">Your institutional ID will be completely hidden.</p>
+                    </div>
+                  </div>
+
+                  <button type="submit" disabled={!formCategory || !formLocation || !formDescription.trim()} className="w-full bg-gradient-to-r from-[#7A5A40] to-[#5A4330] hover:from-[#624731] hover:to-[#4A3727] text-[#FCFBF8] font-formal-title text-xl font-bold py-4 px-4 rounded-2xl transition-all duration-300 disabled:opacity-50 mt-4 shadow-[0_8px_20px_rgba(122,90,64,0.3)] hover:shadow-[0_8px_25px_rgba(122,90,64,0.5)] transform hover:-translate-y-1">
+                    File Official Complaint
+                  </button>
+                </form>
+              </div>
+            </div>
+
+            {/* Right Column: Dynamic View */}
+            <div className="lg:col-span-7 space-y-6">
+              
+              {studentTab === 'dashboard' ? (
+                /* --- MY DASHBOARD VIEW --- */
+                <div className="space-y-6">
+                  <div className="flex justify-between items-end border-b border-[#E5DFD3] pb-4">
+                    <div>
+                      <h2 className="text-3xl font-formal-title font-bold text-[#342921] tracking-tight">My Dashboard</h2>
+                      <p className="text-sm text-[#8B7C6E] font-medium mt-1">Track the status of your reported issues.</p>
+                    </div>
+                  </div>
+                  
+                  {/* Student Stats */}
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="bg-[#FCFBF8] p-5 rounded-2xl shadow-sm border border-[#E5DFD3] flex flex-col justify-center items-center">
+                      <span className="text-3xl font-formal-title font-bold text-[#342921]">{complaints.filter(c => c.author === auth.email).length}</span>
+                      <span className="text-xs text-[#8B7C6E] uppercase tracking-wider mt-1 font-bold">My Reports</span>
+                    </div>
+                    <div className="bg-[#FCFBF8] p-5 rounded-2xl shadow-sm border border-[#E5DFD3] flex flex-col justify-center items-center">
+                      <span className="text-3xl font-formal-title font-bold text-[#C56F3D]">{complaints.filter(c => c.author === auth.email && c.status !== 'Resolved').length}</span>
+                      <span className="text-xs text-[#8B7C6E] uppercase tracking-wider mt-1 font-bold">Pending</span>
+                    </div>
+                    <div className="bg-[#EBECE4] p-5 rounded-2xl shadow-sm border border-[#C6CFC1] flex flex-col justify-center items-center">
+                      <span className="text-3xl font-formal-title font-bold text-[#4B6B4A]">{complaints.filter(c => c.author === auth.email && c.status === 'Resolved').length}</span>
+                      <span className="text-xs text-[#4B6B4A] uppercase tracking-wider mt-1 font-bold">Resolved</span>
+                    </div>
+                  </div>
+
+                  {/* My Complaints List */}
+                  <div className="bg-[#FCFBF8] rounded-3xl border border-[#E5DFD3] shadow-sm overflow-hidden">
+                    {complaints.filter(c => c.author === auth.email).length === 0 ? (
+                      <div className="p-12 text-center text-[#8B7C6E] font-medium">You haven't submitted any complaints yet.</div>
+                    ) : (
+                      <div className="divide-y divide-[#E5DFD3]">
+                        {complaints.filter(c => c.author === auth.email).map(c => (
+                          <div key={c.id} className="p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                            <div>
+                              <div className="flex items-center gap-3 mb-1">
+                                <span className="text-sm font-formal-title font-bold text-[#342921]">#{c.id}</span>
+                                <span className="text-[10px] font-bold text-[#8B7C6E] uppercase tracking-wider bg-[#F5F2EB] px-2 py-0.5 rounded-full">{c.category}</span>
+                              </div>
+                              <p className="text-[#5A4535] font-medium">{c.description}</p>
+                              <p className="text-xs text-[#A7988A] mt-2 flex items-center gap-1">
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                                {c.location}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-4 text-right">
+                              <div className="flex flex-col items-center">
+                                <span className="text-xs text-[#8B7C6E] font-bold uppercase tracking-wider mb-1">Status</span>
+                                <span className={`text-[11px] font-bold uppercase tracking-widest px-3 py-1 rounded-lg border ${c.status === 'Resolved' ? 'bg-green-50 text-green-700 border-green-200' : c.status === 'In Progress' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
+                                  {c.status}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                /* --- COMMUNITY BULLETIN VIEW --- */
+                <div className="space-y-6">
+                  <div className="flex justify-between items-end border-b border-[#E5DFD3] pb-4">
+                    <div>
+                      <h2 className="text-3xl font-formal-title font-bold text-[#342921] tracking-tight">Community Bulletin</h2>
+                      <p className="text-sm text-[#8B7C6E] font-medium mt-1">Lend your voice. <strong className="text-[#8C6D51]">Upvote or Downvote</strong> to shape campus priorities.</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-8">
+                    {filteredComplaints.length === 0 ? (
+                      <div className="bg-[#FCFBF8] p-12 rounded-3xl border border-[#E5DFD3] text-center">
+                         <p className="text-[#8B7C6E] font-medium">No open issues reported at this time.</p>
+                      </div>
+                    ) : (
+                      CATEGORIES.map(category => {
+                        const categoryIssues = filteredComplaints.filter(c => c.category === category);
+                        if (categoryIssues.length === 0) return null;
+
+                        return (
+                          <div key={category} className="bg-[#F5F2EB]/60 p-6 rounded-3xl border border-[#E5DFD3] shadow-inner">
+                            <h3 className="text-xl font-formal-title font-bold text-[#5A4535] mb-5 ml-1 flex items-center gap-2">
+                              <svg className="w-5 h-5 text-[#8C6D51]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+                              {category} Issues
+                            </h3>
+                            <div className="space-y-4">
+                              {categoryIssues.map(c => {
+                                const currentVote = userVotes[c.id] || 0;
+                                const progressStep = c.status === 'Resolved' ? 3 : c.status === 'In Progress' ? 2 : 1;
+                                
+                                return (
+                                  <div key={c.id} className="bg-[#FCFBF8] p-6 rounded-2xl border border-[#E5DFD3] shadow-sm hover:shadow-md transition-shadow flex gap-6 items-start">
+                                    {/* Upvote / Downvote Action */}
+                                    <div className="flex flex-col items-center justify-center gap-1 w-14 bg-[#F9F7F3] p-1.5 rounded-2xl border border-[#EAE5DB]">
+                                      <button 
+                                        onClick={() => handleVote(c.id, 1)} 
+                                        className={`w-10 h-8 rounded-xl flex items-center justify-center transition-all ${currentVote === 1 ? 'bg-green-100 text-green-700 shadow-inner' : 'text-[#A7988A] hover:bg-[#E5DFD3] hover:text-[#8C6D51]'}`}
+                                      >
+                                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 15l7-7 7 7"></path></svg>
+                                      </button>
+                                      <span className="font-formal-title font-bold text-lg leading-none text-[#342921] py-1">{c.upvotes || 0}</span>
+                                      <button 
+                                        onClick={() => handleVote(c.id, -1)} 
+                                        className={`w-10 h-8 rounded-xl flex items-center justify-center transition-all ${currentVote === -1 ? 'bg-red-100 text-red-700 shadow-inner' : 'text-[#A7988A] hover:bg-[#E5DFD3] hover:text-[#8C6D51]'}`}
+                                      >
+                                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7"></path></svg>
+                                      </button>
+                                    </div>
+                            
+                                    <div className="flex-1 w-full">
+                                      <div className="flex justify-between items-start mb-2">
+                                        <span className="text-[11px] font-bold text-[#8B7C6E] uppercase tracking-wider flex items-center gap-1">
+                                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                                          {c.location}
+                                        </span>
+                                        <span className="text-xs font-formal-title font-bold text-[#B5A89E]">#{c.id}</span>
+                                      </div>
+                                      
+                                      <h4 className="text-[#342921] font-semibold text-lg leading-relaxed mt-1">{c.description}</h4>
+                                      
+                                      {/* Visual Progress Timeline */}
+                                      <div className="mt-6 relative pt-4 border-t border-[#F0EBE1]">
+                                 <div className="absolute top-0 left-2 right-2 h-[3px] bg-[#EAE5DB] -mt-[1.5px] rounded-full"></div>
+                                 <div className="absolute top-0 left-2 h-[3px] -mt-[1.5px] rounded-full transition-all duration-500" style={{ width: progressStep === 3 ? '100%' : progressStep === 2 ? '50%' : '0%', backgroundColor: progressStep === 3 ? '#22c55e' : progressStep === 2 ? '#3b82f6' : '#ef4444' }}></div>
+                                 
+                                 <div className="flex justify-between relative -mt-3.5">
+                                   {/* Step 1 */}
+                                   <div className="flex flex-col items-center gap-1 bg-[#FCFBF8] px-2">
+                                      <div className="w-4 h-4 rounded-full bg-red-500 border-2 border-[#FCFBF8] shadow-sm z-10"></div>
+                                      <span className="text-[10px] font-bold text-red-500 uppercase tracking-wider">Raised</span>
+                                   </div>
+                                   {/* Step 2 */}
+                                   <div className="flex flex-col items-center gap-1 bg-[#FCFBF8] px-2">
+                                      <div className={`w-4 h-4 rounded-full border-2 border-[#FCFBF8] shadow-sm z-10 transition-colors ${progressStep >= 2 ? 'bg-blue-500' : 'bg-[#D6CFC4]'}`}></div>
+                                      <span className={`text-[10px] font-bold uppercase tracking-wider ${progressStep >= 2 ? 'text-blue-500' : 'text-[#A7988A]'}`}>In Progress</span>
+                                   </div>
+                                   {/* Step 3 */}
+                                   <div className="flex flex-col items-center gap-1 bg-[#FCFBF8] px-2">
+                                      <div className={`w-4 h-4 rounded-full border-2 border-[#FCFBF8] shadow-sm z-10 transition-colors ${progressStep === 3 ? 'bg-green-500' : 'bg-[#D6CFC4]'}`}></div>
+                                      <span className={`text-[10px] font-bold uppercase tracking-wider ${progressStep === 3 ? 'text-green-500' : 'text-[#A7988A]'}`}>Resolved</span>
+                                   </div>
+                                 </div>
+                              </div>
+
+                            </div>
+                          </div>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        )
+                      })
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+          </div>
+          )}
+          </div>
+        )}
+      </main>
+      
+      {/* Global CSS injected */}
+      <style dangerouslySetInnerHTML={{__html: `
+        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;700;800&family=Lora:wght@400;500;600&display=swap');
+        .font-formal-title { font-family: 'Playfair Display', serif; }
+        .font-formal-body { font-family: 'Lora', serif; }
+
+        @keyframes fade-in-up {
+          0% { opacity: 0; transform: translateY(15px); }
+          100% { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in-up { animation: fade-in-up 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        
+        @keyframes blob {
+          0% { transform: translate(0px, 0px) scale(1); }
+          33% { transform: translate(30px, -50px) scale(1.1); }
+          66% { transform: translate(-20px, 20px) scale(0.9); }
+          100% { transform: translate(0px, 0px) scale(1); }
+        }
+        .animate-blob { animation: blob 7s infinite; }
+        .animation-delay-2000 { animation-delay: 2s; }
+      `}} />
+    </div>
+  );
+}
